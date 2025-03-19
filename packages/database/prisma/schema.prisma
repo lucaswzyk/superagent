@@ -1,0 +1,60 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  reflections   Reflection[]
+  conversations Conversation[]
+}
+
+model Reflection {
+  id          String   @id @default(cuid())
+  title       String
+  content     String
+  tags        String[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  agentNotes  AgentNote[]
+}
+
+model Conversation {
+  id          String   @id @default(cuid())
+  title       String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  messages    Message[]
+  agentType   String   // e.g., "reflection", "law", "creative"
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  content        String
+  role           String       // "user" or "assistant"
+  createdAt      DateTime     @default(now())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+}
+
+model AgentNote {
+  id           String     @id @default(cuid())
+  content      String
+  agentType    String     // e.g., "reflection", "law", "creative"
+  createdAt    DateTime   @default(now())
+  reflectionId String
+  reflection   Reflection @relation(fields: [reflectionId], references: [id])
+} 

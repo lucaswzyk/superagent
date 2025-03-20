@@ -151,3 +151,56 @@ export const submitShareGPT = async (body: ShareGPTSubmitBodyInterface) => {
   const url = `https://shareg.pt/${id}`;
   window.open(url, '_blank');
 };
+
+interface UsageEntry {
+  n_context_tokens_total: number;
+  n_generated_tokens_total: number;
+}
+
+interface TotalUsage {
+  contextTokens: number;
+  generatedTokens: number;
+}
+
+export const getOpenAIUsage = async (apiKey?: string) => {
+  if (!apiKey) {
+    throw new Error('API key is required to fetch usage data');
+  }
+
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${apiKey}`,
+  };
+
+  const today = new Date().toISOString().split('T')[0];
+  console.log('Fetching OpenAI usage for date:', today);
+  
+  const response = await fetch('https://api.openai.com/v1/usage?date=' + today, {
+    method: 'GET',
+    headers,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('OpenAI usage API error:', errorText);
+    throw new Error(`Failed to fetch OpenAI usage: ${errorText}`);
+  }
+
+  const data = await response.json();
+  console.log('Raw OpenAI usage data:', data);
+  
+  if (!data.data || !Array.isArray(data.data)) {
+    console.error('Invalid response structure:', data);
+    throw new Error('Invalid response structure from OpenAI API');
+  }
+
+  // Sum up all context and generated tokens from all entries
+  const totalUsage = data.data.reduce((acc: TotalUsage, entry: UsageEntry) => {
+    acc.contextTokens += entry.n_context_tokens_total || 0;
+    acc.generatedTokens += entry.n_generated_tokens_total || 0;
+    return acc;
+  }, { contextTokens: 0, generatedTokens: 0 });
+
+  console.log('Total usage:', totalUsage);
+  return totalUsage;
+};

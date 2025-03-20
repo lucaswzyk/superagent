@@ -10,7 +10,7 @@ import { ModelOptions, TotalTokenUsed } from '@type/chat';
 
 import CalculatorIcon from '@icon/CalculatorIcon';
 
-type CostMapping = { model: string; cost: number }[];
+type CostMapping = { model: string; cost: number; totalTokens: number }[];
 
 const tokenCostToCost = (
   tokenCost: TotalTokenUsed[ModelOptions],
@@ -41,7 +41,8 @@ const TotalTokenCost = () => {
     const updatedCostMapping: CostMapping = [];
     Object.entries(totalTokenUsed).forEach(([model, tokenCost]) => {
       const cost = tokenCostToCost(tokenCost, model as ModelOptions);
-      updatedCostMapping.push({ model, cost });
+      const totalTokens = tokenCost.promptTokens + tokenCost.completionTokens;
+      updatedCostMapping.push({ model, cost, totalTokens });
     });
 
     setCostMapping(updatedCostMapping);
@@ -54,21 +55,28 @@ const TotalTokenCost = () => {
           <thead className='text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400'>
             <tr>
               <th className='px-4 py-2'>{t('model', { ns: 'model' })}</th>
+              <th className='px-4 py-2'>Tokens</th>
               <th className='px-4 py-2'>USD</th>
             </tr>
           </thead>
           <tbody>
-            {costMapping.map(({ model, cost }) => (
+            {costMapping.map(({ model, cost, totalTokens }) => (
               <tr
                 key={model}
                 className='bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'
               >
                 <td className='px-4 py-2'>{model}</td>
+                <td className='px-4 py-2'>{totalTokens.toLocaleString()}</td>
                 <td className='px-4 py-2'>{cost.toPrecision(3)}</td>
               </tr>
             ))}
             <tr className='bg-white border-b dark:bg-gray-800 dark:border-gray-700 font-bold'>
               <td className='px-4 py-2'>{t('total', { ns: 'main' })}</td>
+              <td className='px-4 py-2'>
+                {costMapping
+                  .reduce((prev, curr) => prev + curr.totalTokens, 0)
+                  .toLocaleString()}
+              </td>
               <td className='px-4 py-2'>
                 {costMapping
                   .reduce((prev, curr) => prev + curr.cost, 0)
@@ -114,21 +122,25 @@ export const TotalTokenCostDisplay = () => {
   const totalTokenUsed = useStore((state) => state.totalTokenUsed);
 
   const [totalCost, setTotalCost] = useState<number>(0);
+  const [totalTokens, setTotalTokens] = useState<number>(0);
 
   useEffect(() => {
     let updatedTotalCost = 0;
+    let updatedTotalTokens = 0;
 
     Object.entries(totalTokenUsed).forEach(([model, tokenCost]) => {
       updatedTotalCost += tokenCostToCost(tokenCost, model as ModelOptions);
+      updatedTotalTokens += tokenCost.promptTokens + tokenCost.completionTokens;
     });
 
     setTotalCost(updatedTotalCost);
+    setTotalTokens(updatedTotalTokens);
   }, [totalTokenUsed]);
 
   return (
     <a className='flex py-2 px-2 items-center gap-3 rounded-md hover:bg-gray-500/10 transition-colors duration-200 text-white text-sm'>
       <CalculatorIcon />
-      {`USD ${totalCost.toPrecision(3)}`}
+      {`${totalTokens.toLocaleString()} tokens (${totalCost.toPrecision(3)} USD)`}
     </a>
   );
 };

@@ -1,6 +1,7 @@
 import { MessageInterface, ModelOptions, TotalTokenUsed } from '@type/chat';
 
 import useStore from '@store/store';
+import { getOpenAIUsage } from '@api/api';
 
 import { Tiktoken } from '@dqbd/tiktoken/lite';
 const cl100k_base = await import('@dqbd/tiktoken/encoders/cl100k_base.json');
@@ -87,26 +88,43 @@ export const limitMessageTokens = (
   return limitedMessages;
 };
 
-export const updateTotalTokenUsed = (
+export const updateTotalTokenUsed = async (
   model: ModelOptions,
   promptMessages: MessageInterface[],
   completionMessage: MessageInterface
 ) => {
   const setTotalTokenUsed = useStore.getState().setTotalTokenUsed;
+  const setError = useStore.getState().setError;
   const updatedTotalTokenUsed: TotalTokenUsed = JSON.parse(
     JSON.stringify(useStore.getState().totalTokenUsed)
   );
 
-  const newPromptTokens = countTokens(promptMessages, model);
-  const newCompletionTokens = countTokens([completionMessage], model);
-  const { promptTokens = 0, completionTokens = 0 } =
-    updatedTotalTokenUsed[model] ?? {};
+  console.log('Updating token usage for model:', model);
+  console.log('Current token usage state:', updatedTotalTokenUsed);
 
-  updatedTotalTokenUsed[model] = {
-    promptTokens: promptTokens + newPromptTokens,
-    completionTokens: completionTokens + newCompletionTokens,
-  };
-  setTotalTokenUsed(updatedTotalTokenUsed);
+  try {
+    const apiKey = useStore.getState().apiKey;
+    if (!apiKey) {
+      console.error('No API key available for token usage tracking');
+      setError('API key is required to track token usage');
+      return;
+    }
+
+    // Get usage data from OpenAI
+    const usageData = await getOpenAIUsage(apiKey);
+    console.log('Received usage data from OpenAI:', usageData);
+    
+    // Update the total tokens used based on the API response
+    updatedTotalTokenUsed[model] = {
+      promptTokens: usageData.n_prompt_tokens,
+      completionTokens: usageData.n_completion_tokens,
+    };
+    console.log('Updated token usage state:', updatedTotalTokenUsed);
+    setTotalTokenUsed(updatedTotalTokenUsed);
+  } catch (error) {
+    console.error('Error in updateTotalTokenUsed:', error);
+    setError(`Failed to update token usage: ${(error as Error).message}`);
+  }
 };
 
 export default countTokens;

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ChatMessage } from '../../types/agent';
 import { wsService } from '../../services/websocket';
+import TokenCount from '@components/TokenCount/TokenCount';
 
 interface ChatInterfaceProps {
   className?: string;
@@ -108,23 +109,28 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ className }) => {
         )}
         <div ref={messagesEndRef} />
       </div>
-      <form onSubmit={handleSubmit} className="p-4 border-t">
-        <div className="flex space-x-4">
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Type your message..."
-            className="flex-1 rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <button
-            type="submit"
-            className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            Send
-          </button>
+      <div className="flex flex-col border-t border-gray-200 bg-white">
+        <div className="px-4 py-2 flex justify-end">
+          <TokenCount />
         </div>
-      </form>
+        <form onSubmit={handleSubmit} className="p-4">
+          <div className="flex space-x-4">
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Type your message..."
+              className="flex-1 rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <button
+              type="submit"
+              className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              Send
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }; 

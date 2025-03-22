@@ -4,6 +4,7 @@ import { TaskDecomposer } from './TaskDecomposer';
 import { BaseAgent } from './BaseAgent';
 import { AgentConfig, AgentEvent, AgentEventType } from './types';
 import { EvolutionManager } from './EvolutionManager';
+import { logger } from '../utils/logger';
 
 export interface Task {
   id: string;
@@ -33,6 +34,7 @@ export class AgentOrchestrator extends EventEmitter {
     this.evolutionManager = EvolutionManager.getInstance();
     this.activeAgents = new Map();
     this.activeTasks = new Map();
+    logger.info('AgentOrchestrator initialized');
   }
 
   public static getInstance(): AgentOrchestrator {
@@ -42,14 +44,13 @@ export class AgentOrchestrator extends EventEmitter {
     return AgentOrchestrator.instance;
   }
 
-  private emitEvent(type: AgentEventType, agentId: string, data: Record<string, any> = {}): void {
-    const event: AgentEvent = {
+  private emitEvent(type: AgentEventType, agentId: string, data?: any): void {
+    this.emit(type, {
       type,
       timestamp: new Date(),
       agentId,
       data
-    };
-    this.emit(type, event);
+    } as AgentEvent);
   }
 
   public async createAgent(config: AgentConfig): Promise<BaseAgent> {
@@ -60,11 +61,21 @@ export class AgentOrchestrator extends EventEmitter {
       // Register agent
       this.activeAgents.set(config.id, agent);
       
+      logger.info('Agent created and registered', {
+        agentId: config.id,
+        name: config.name,
+        capabilities: Array.from(config.capabilities)
+      });
+
       // Emit event
       this.emitEvent('agent_created', config.id, { config });
 
       return agent;
     } catch (error) {
+      logger.error('Failed to create agent', {
+        config,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
       this.emitEvent('error', 'system', { error });
       throw error;
     }
@@ -75,6 +86,11 @@ export class AgentOrchestrator extends EventEmitter {
     if (agent) {
       // Clean up agent resources
       this.activeAgents.delete(agentId);
+      
+      logger.info('Agent destroyed', {
+        agentId,
+        name: agent.config.name
+      });
       
       // Emit event
       this.emitEvent('agent_destroyed', agentId);
@@ -87,6 +103,13 @@ export class AgentOrchestrator extends EventEmitter {
       task.status = 'in_progress';
       task.startTime = new Date();
       this.activeTasks.set(task.id, task);
+
+      logger.info('Task execution started', {
+        taskId: task.id,
+        type: task.type,
+        agentIds: task.agents.map(a => a.config.id),
+        priority: task.priority
+      });
 
       // Emit event
       this.emitEvent('task_started', task.agents[0]?.config.id || 'system', { taskId: task.id });
@@ -118,6 +141,12 @@ export class AgentOrchestrator extends EventEmitter {
       task.result = result;
       task.endTime = new Date();
 
+      logger.info('Task execution completed', {
+        taskId: task.id,
+        agentId: primaryAgent.config.id,
+        duration: task.endTime.getTime() - task.startTime!.getTime()
+      });
+
       // Emit event
       this.emitEvent('task_completed', primaryAgent.config.id, { taskId: task.id, result });
 
@@ -131,6 +160,13 @@ export class AgentOrchestrator extends EventEmitter {
       task.error = error instanceof Error ? error.message : 'Unknown error';
       task.endTime = new Date();
 
+      logger.error('Task execution failed', {
+        taskId: task.id,
+        agentId: task.agents[0]?.config.id,
+        error: task.error,
+        duration: task.endTime.getTime() - task.startTime!.getTime()
+      });
+
       // Emit event
       this.emitEvent('task_failed', task.agents[0]?.config.id || 'system', { 
         taskId: task.id, 
@@ -143,8 +179,13 @@ export class AgentOrchestrator extends EventEmitter {
 
   private async checkAndEvolveAgent(agent: BaseAgent): Promise<void> {
     const state = agent.getState();
-    if (state.metrics.successRate < 0.8 || state.metrics.userSatisfaction < 0.7) {
-      await this.evolutionManager.evolveAgent(agent);
+    if (state.metrics.successRate < agent.config.evolutionThreshold) {
+      logger.info('Agent evolution triggered', {
+        agentId: agent.config.id,
+        currentSuccessRate: state.metrics.successRate,
+        threshold: agent.config.evolutionThreshold
+      });
+      await agent.evolve();
     }
   }
 

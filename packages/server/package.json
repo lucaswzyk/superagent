@@ -9,12 +9,15 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@auth/prisma-adapter": "^2.8.0",
     "@prisma/client": "^5.10.0",
     "@superagent/agents": "*",
     "@superagent/database": "*",
     "@superagent/shared": "*",
+    "@types/jsonwebtoken": "^9.0.9",
     "@types/socket.io": "^3.0.1",
     "@types/ws": "^8.18.0",
+    "jsonwebtoken": "^9.0.2",
     "next": "14.1.0",
     "next-auth": "^4.24.5",
     "next-connect": "^1.0.0",

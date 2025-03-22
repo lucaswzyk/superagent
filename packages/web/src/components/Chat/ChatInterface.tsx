@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ChatMessage } from '../../types/agent';
 import { wsService } from '../../services/websocket';
-import TokenCount from '@components/TokenCount/TokenCount';
+import TokenCount from '@components/TokenCount';
 
 interface ChatInterfaceProps {
   className?: string;

@@ -57,6 +57,20 @@ export interface AgentMetrics {
   lastUpdated: Date;
 }
 
+export interface SystemMetrics {
+  activeAgents: number;
+  totalTasks: number;
+  successRate: number;
+  averageResponseTime: number;
+  resourceUsage: {
+    tokens: number;
+    computeUnits: number;
+    memory: number;
+    storage: number;
+  };
+  lastUpdated: Date;
+}
+
 export interface AgentState {
   status: 'idle' | 'busy' | 'learning' | 'evolving' | 'error';
   currentTask?: {

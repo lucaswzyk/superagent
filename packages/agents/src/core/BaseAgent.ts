@@ -1,6 +1,7 @@
 import { OpenAI } from 'openai';
 import { EventEmitter } from 'events';
 import { v4 as uuidv4 } from 'uuid';
+import { logger } from '../utils/logger';
 import {
   AgentState,
   AgentEvent,
@@ -51,6 +52,11 @@ export class BaseAgent extends EventEmitter {
     };
 
     this.setupEventHandlers();
+    logger.info('Agent instantiated', { 
+      agentId: config.id,
+      name: config.name,
+      capabilities: Array.from(config.capabilities)
+    });
   }
 
   private setupEventHandlers(): void {
@@ -139,6 +145,12 @@ export class BaseAgent extends EventEmitter {
       priority: 1
     };
 
+    logger.info('Processing conversation', {
+      agentId: this.config.id,
+      taskId: conversation.id,
+      type: conversation.agentType
+    });
+
     try {
       const systemPrompt = `You are ${this.config.name}, an AI agent specialized in ${this.config.description}.`;
       const response = await this.generateResponse(conversation.messages, systemPrompt);
@@ -146,15 +158,30 @@ export class BaseAgent extends EventEmitter {
       this.state.status = 'idle';
       delete this.state.currentTask;
       
+      logger.info('Conversation processed successfully', {
+        agentId: this.config.id,
+        taskId: conversation.id
+      });
+      
       return response;
     } catch (error) {
       this.state.status = 'error';
+      logger.error('Error processing conversation', {
+        agentId: this.config.id,
+        taskId: conversation.id,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
       throw error;
     }
   }
 
   public async learn(experience: Experience): Promise<void> {
     this.state.status = 'learning';
+    logger.info('Starting learning process', {
+      agentId: this.config.id,
+      experienceId: experience.id
+    });
+
     this.emit('learning_started', { 
       type: 'learning_started',
       timestamp: new Date(),
@@ -167,6 +194,11 @@ export class BaseAgent extends EventEmitter {
         await strategy.apply(this, experience);
       }
 
+      logger.info('Learning completed', {
+        agentId: this.config.id,
+        experienceId: experience.id
+      });
+
       this.emit('learning_completed', {
         type: 'learning_completed',
         timestamp: new Date(),
@@ -174,6 +206,12 @@ export class BaseAgent extends EventEmitter {
         data: {}
       } as AgentEvent);
     } catch (error) {
+      logger.error('Learning failed', {
+        agentId: this.config.id,
+        experienceId: experience.id,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+
       this.emit('error', {
         type: 'error',
         timestamp: new Date(),
@@ -189,6 +227,11 @@ export class BaseAgent extends EventEmitter {
   public async evolve(): Promise<void> {
     if (this.shouldEvolve()) {
       this.state.status = 'evolving';
+      logger.info('Starting evolution process', {
+        agentId: this.config.id,
+        currentMetrics: this.state.metrics
+      });
+
       this.emit('evolution_started', {
         type: 'evolution_started',
         timestamp: new Date(),
@@ -203,6 +246,11 @@ export class BaseAgent extends EventEmitter {
           }
         }
 
+        logger.info('Evolution completed', {
+          agentId: this.config.id,
+          updatedMetrics: this.state.metrics
+        });
+
         this.emit('evolution_completed', {
           type: 'evolution_completed',
           timestamp: new Date(),
@@ -210,6 +258,11 @@ export class BaseAgent extends EventEmitter {
           data: {}
         } as AgentEvent);
       } catch (error) {
+        logger.error('Evolution failed', {
+          agentId: this.config.id,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+
         this.emit('error', {
           type: 'error',
           timestamp: new Date(),
@@ -247,6 +300,11 @@ export class BaseAgent extends EventEmitter {
   }
 
   private async handleTaskCompletion(event: AgentEvent): Promise<void> {
+    logger.info('Task completed', {
+      agentId: this.config.id,
+      taskId: event.data?.taskId,
+      metrics: this.state.metrics
+    });
     this.state.metrics.successRate = 
       (this.state.metrics.successRate * 9 + 1) / 10; // Rolling average
     this.state.metrics.taskCompletion += 1;
@@ -254,6 +312,11 @@ export class BaseAgent extends EventEmitter {
   }
 
   private async handleTaskFailure(event: AgentEvent): Promise<void> {
+    logger.error('Task failed', {
+      agentId: this.config.id,
+      taskId: event.data?.taskId,
+      error: event.data?.error
+    });
     this.state.metrics.successRate = 
       (this.state.metrics.successRate * 9) / 10; // Rolling average
     this.state.metrics.lastUpdated = new Date();

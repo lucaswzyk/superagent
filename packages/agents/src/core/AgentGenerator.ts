@@ -3,14 +3,18 @@ import { BaseAgent } from './BaseAgent';
 import { AgentConfig } from './types';
 import { AgentMetadata } from './AgentRegistry';
 import { v4 as uuidv4 } from 'uuid';
+import { writeFileSync, unlinkSync } from 'fs';
+import { join } from 'path';
 
 export class AgentGenerator {
   private openai: OpenAI;
+  private tempDir: string;
 
   constructor() {
     this.openai = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,
     });
+    this.tempDir = join(process.cwd(), 'temp');
   }
 
   async generateAgentCode(capabilities: string[]): Promise<{ code: string; metadata: AgentMetadata }> {
@@ -63,28 +67,30 @@ Use best practices for AI agent development and ensure type safety.`;
     try {
       // Create a new module with the required imports
       const moduleCode = `
-        import { BaseAgent, AgentConfig, AgentConversation } from './BaseAgent';
-        import { Reflection } from '@superagent/shared';
+        const { BaseAgent } = require('./BaseAgent');
+        const { Reflection } = require('@superagent/shared');
         ${code}
+        module.exports = { DynamicAgent: ${metadata.name} };
       `;
 
-      // Use dynamic import to load the agent class
-      const module = await import(
-        'data:text/javascript;base64,' + 
-        Buffer.from(moduleCode).toString('base64')
-      );
+      // Write the code to a temporary file
+      const tempFile = join(this.tempDir, `agent-${uuidv4()}.js`);
+      writeFileSync(tempFile, moduleCode);
 
-      // Find the exported class that extends BaseAgent
-      const AgentClass = Object.values(module).find(
-        (exp): exp is typeof BaseAgent =>
-          typeof exp === 'function' && exp.prototype instanceof BaseAgent
-      );
+      try {
+        // Import the temporary file
+        const module = require(tempFile);
+        const AgentClass = module.DynamicAgent;
 
-      if (!AgentClass) {
-        throw new Error('No valid agent class found in generated code');
+        if (!AgentClass || !(AgentClass.prototype instanceof BaseAgent)) {
+          throw new Error('No valid agent class found in generated code');
+        }
+
+        return { AgentClass, metadata };
+      } finally {
+        // Clean up the temporary file
+        unlinkSync(tempFile);
       }
-
-      return { AgentClass, metadata };
     } catch (error) {
       throw new Error(`Failed to create agent class: ${error}`);
     }

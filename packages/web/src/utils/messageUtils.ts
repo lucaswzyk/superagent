@@ -4,7 +4,7 @@ import useStore from '@store/store';
 import { getOpenAIUsage } from '@api/api';
 
 import { Tiktoken } from '@dqbd/tiktoken/lite';
-const cl100k_base = await import('@dqbd/tiktoken/encoders/cl100k_base.json');
+import cl100k_base from '@dqbd/tiktoken/encoders/cl100k_base.json';
 
 const encoder = new Tiktoken(
   cl100k_base.bpe_ranks,

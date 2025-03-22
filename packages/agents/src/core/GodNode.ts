@@ -3,22 +3,16 @@ import { AgentOrchestrator } from './AgentOrchestrator';
 import { AgentRegistry } from './AgentRegistry';
 import { BaseAgent } from './BaseAgent';
 import { AgentConfig, AgentState, AgentEvent } from './types';
+import { KnowledgeGraph } from './KnowledgeGraph';
+import { ResourceManager } from './ResourceManager';
+import { SystemMetrics } from './types';
+import { logger } from '../utils/logger';
 
-interface ResourceUsage {
+interface ResourceRequirements {
   tokens: number;
   computeUnits: number;
   memory: number;
   storage: number;
-  [key: string]: number; // Index signature for type-safe key access
-}
-
-interface SystemMetrics {
-  activeAgents: number;
-  totalTasks: number;
-  successRate: number;
-  averageResponseTime: number;
-  resourceUsage: ResourceUsage;
-  lastUpdated: Date;
 }
 
 interface KnowledgeNode {
@@ -28,90 +22,6 @@ interface KnowledgeNode {
   agentIds: Set<string>;
   lastAccessed: Date;
   createdAt: Date;
-}
-
-class KnowledgeGraph {
-  private nodes: Map<string, KnowledgeNode>;
-  private edges: Map<string, Map<string, number>>;
-
-  constructor() {
-    this.nodes = new Map();
-    this.edges = new Map();
-  }
-
-  addNode(node: KnowledgeNode): void {
-    this.nodes.set(node.id, node);
-    this.edges.set(node.id, new Map());
-  }
-
-  addEdge(fromId: string, toId: string, weight: number): void {
-    if (!this.edges.get(fromId)) {
-      this.edges.set(fromId, new Map());
-    }
-    this.edges.get(fromId)!.set(toId, weight);
-  }
-
-  getRelatedConcepts(conceptId: string, minWeight: number = 0.5): KnowledgeNode[] {
-    const related = [];
-    const edges = this.edges.get(conceptId);
-    if (edges) {
-      for (const [toId, weight] of edges) {
-        if (weight >= minWeight) {
-          const node = this.nodes.get(toId);
-          if (node) related.push(node);
-        }
-      }
-    }
-    return related;
-  }
-}
-
-class ResourceManager {
-  private resources: ResourceUsage = {
-    tokens: 0,
-    computeUnits: 0,
-    memory: 0,
-    storage: 0
-  };
-
-  private limits: ResourceUsage = {
-    tokens: 1000000,
-    computeUnits: 100,
-    memory: 1024 * 1024 * 1024, // 1GB
-    storage: 1024 * 1024 * 1024 * 10 // 10GB
-  };
-
-  async allocateResources(requirements: Partial<ResourceUsage>): Promise<boolean> {
-    const keys = Object.keys(requirements) as Array<keyof ResourceUsage>;
-    
-    // Check if we have enough resources
-    for (const key of keys) {
-      const value = requirements[key] || 0;
-      if ((this.resources[key] + value) > this.limits[key]) {
-        return false;
-      }
-    }
-
-    // Allocate resources
-    for (const key of keys) {
-      const value = requirements[key] || 0;
-      this.resources[key] += value;
-    }
-
-    return true;
-  }
-
-  async releaseResources(resources: Partial<ResourceUsage>): Promise<void> {
-    const keys = Object.keys(resources) as Array<keyof ResourceUsage>;
-    for (const key of keys) {
-      const value = resources[key] || 0;
-      this.resources[key] = Math.max(0, this.resources[key] - value);
-    }
-  }
-
-  getCurrentUsage(): ResourceUsage {
-    return { ...this.resources };
-  }
 }
 
 export class GodNode extends EventEmitter {
@@ -126,8 +36,8 @@ export class GodNode extends EventEmitter {
     super();
     this.orchestrator = AgentOrchestrator.getInstance();
     this.registry = AgentRegistry.getInstance();
-    this.knowledgeGraph = new KnowledgeGraph();
-    this.resourceManager = new ResourceManager();
+    this.knowledgeGraph = KnowledgeGraph.getInstance();
+    this.resourceManager = ResourceManager.getInstance();
     
     this.metrics = {
       activeAgents: 0,
@@ -139,6 +49,7 @@ export class GodNode extends EventEmitter {
     };
 
     this.setupEventHandlers();
+    logger.info('GodNode initialized');
   }
 
   public static getInstance(): GodNode {
@@ -149,10 +60,55 @@ export class GodNode extends EventEmitter {
   }
 
   private setupEventHandlers(): void {
-    (this.orchestrator as unknown as EventEmitter).on('agent_created', this.handleAgentCreated.bind(this));
-    (this.orchestrator as unknown as EventEmitter).on('agent_destroyed', this.handleAgentDestroyed.bind(this));
-    (this.orchestrator as unknown as EventEmitter).on('task_completed', this.handleTaskCompletion.bind(this));
-    (this.orchestrator as unknown as EventEmitter).on('task_failed', this.handleTaskFailure.bind(this));
+    this.on('agent_created', this.handleAgentCreated.bind(this));
+    this.on('agent_destroyed', this.handleAgentDestroyed.bind(this));
+    this.on('task_completed', this.handleTaskCompleted.bind(this));
+    this.on('task_failed', this.handleTaskFailed.bind(this));
+  }
+
+  private handleAgentCreated(event: any): void {
+    this.metrics.activeAgents++;
+    this.metrics.lastUpdated = new Date();
+    logger.info('System agent count updated', {
+      event: 'agent_created',
+      agentId: event.agentId,
+      totalActiveAgents: this.metrics.activeAgents
+    });
+  }
+
+  private handleAgentDestroyed(event: any): void {
+    this.metrics.activeAgents--;
+    this.metrics.lastUpdated = new Date();
+    logger.info('System agent count updated', {
+      event: 'agent_destroyed',
+      agentId: event.agentId,
+      totalActiveAgents: this.metrics.activeAgents
+    });
+  }
+
+  private handleTaskCompleted(event: any): void {
+    this.metrics.totalTasks++;
+    this.metrics.successRate = (this.metrics.successRate * 9 + 1) / 10;
+    this.metrics.lastUpdated = new Date();
+    logger.info('System metrics updated', {
+      event: 'task_completed',
+      taskId: event.data.taskId,
+      agentId: event.agentId,
+      metrics: this.metrics
+    });
+  }
+
+  private handleTaskFailed(event: any): void {
+    this.metrics.totalTasks++;
+    this.metrics.successRate = (this.metrics.successRate * 9) / 10;
+    this.metrics.lastUpdated = new Date();
+    logger.error('System metrics updated', {
+      event: 'task_failed',
+      taskId: event.data.taskId,
+      agentId: event.agentId,
+      error: event.data.error,
+      metrics: this.metrics
+    });
   }
 
   public async processUserRequest(request: {
@@ -161,17 +117,34 @@ export class GodNode extends EventEmitter {
     priority?: number;
   }): Promise<any> {
     try {
+      logger.info('Processing user request', {
+        type: request.type,
+        priority: request.priority
+      });
+
       // 1. Analyze request and determine required capabilities
       const capabilities = await this.analyzeRequestCapabilities(request);
+      logger.info('Request capabilities analyzed', {
+        type: request.type,
+        capabilities
+      });
       
       // 2. Find or create agents with required capabilities
       const agents = await this.ensureCapableAgents(capabilities);
+      logger.info('Agents allocated for request', {
+        type: request.type,
+        agentIds: agents.map(a => a.config.id)
+      });
       
       // 3. Allocate resources
       const resourceRequirements = this.estimateResourceRequirements(request);
       const resourcesAllocated = await this.resourceManager.allocateResources(resourceRequirements);
       
       if (!resourcesAllocated) {
+        logger.error('Resource allocation failed', {
+          type: request.type,
+          requirements: resourceRequirements
+        });
         throw new Error('Insufficient resources to process request');
       }
 
@@ -189,12 +162,21 @@ export class GodNode extends EventEmitter {
         // 5. Learn from results
         await this.learnFromExecution(request, result);
 
+        logger.info('Request processed successfully', {
+          type: request.type,
+          agentIds: agents.map(a => a.config.id)
+        });
+
         return result;
       } finally {
         // Release resources
         await this.resourceManager.releaseResources(resourceRequirements);
       }
     } catch (error) {
+      logger.error('Request processing failed', {
+        type: request.type,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
       this.emit('error', error);
       throw error;
     }
@@ -241,13 +223,13 @@ export class GodNode extends EventEmitter {
     return null; // Placeholder
   }
 
-  private estimateResourceRequirements(request: any): Partial<ResourceUsage> {
-    // Implement resource estimation logic
+  private estimateResourceRequirements(request: any): ResourceRequirements {
+    // Basic estimation based on request type
     return {
-      tokens: 1000,
-      computeUnits: 1,
-      memory: 1024 * 1024, // 1MB
-      storage: 1024 * 1024 * 10 // 10MB
+      tokens: 1000, // Default token allocation
+      computeUnits: 1, // Default compute units
+      memory: 1024 * 1024, // 1MB default memory
+      storage: 1024 * 1024 // 1MB default storage
     };
   }
 
@@ -258,51 +240,17 @@ export class GodNode extends EventEmitter {
     // Update agent relationships
   }
 
-  private async handleAgentCreated(event: AgentEvent): Promise<void> {
-    this.metrics.activeAgents++;
-    this.metrics.lastUpdated = new Date();
-  }
-
-  private async handleAgentDestroyed(event: AgentEvent): Promise<void> {
-    this.metrics.activeAgents--;
-    this.metrics.lastUpdated = new Date();
-  }
-
-  private async handleTaskCompletion(event: AgentEvent): Promise<void> {
-    this.metrics.totalTasks++;
-    this.metrics.successRate = 
-      (this.metrics.successRate * 9 + 1) / 10; // Rolling average
-    this.metrics.lastUpdated = new Date();
-  }
-
-  private async handleTaskFailure(event: AgentEvent): Promise<void> {
-    this.metrics.totalTasks++;
-    this.metrics.successRate = 
-      (this.metrics.successRate * 9) / 10; // Rolling average
-    this.metrics.lastUpdated = new Date();
-  }
-
   public getMetrics(): SystemMetrics {
-    return {
-      ...this.metrics,
-      resourceUsage: this.resourceManager.getCurrentUsage()
-    };
+    return { ...this.metrics };
   }
 
   public async getAgents(): Promise<any[]> {
-    try {
-      // Get all active agents from the orchestrator
-      const agents = Array.from(this.orchestrator['activeAgents'].values());
-      return agents.map(agent => ({
-        id: agent.config.id,
-        name: agent.config.name,
-        description: agent.config.description,
-        capabilities: Array.from(agent.getCapabilities()),
-        status: agent.getState().status
-      }));
-    } catch (error) {
-      console.error('Error getting agents:', error);
-      return [];
-    }
+    const agents = this.orchestrator.getActiveAgents();
+    return Array.from(agents.values()).map(agent => ({
+      id: agent.config.id,
+      name: agent.config.name,
+      capabilities: Array.from(agent.getCapabilities()),
+      state: agent.getState()
+    }));
   }
 } 
